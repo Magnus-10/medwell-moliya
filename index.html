@@ -268,6 +268,13 @@ function pulV(n,v){ return v==="USD" ? "$"+pul(n) : pul(n)+" so'm"; }
 const kurs=()=>Math.max(1,son(cfg.kurs)||12800);
 const somga=(n,v)=> v==="USD" ? n*kurs() : n;
 
+function yosh(d){
+  if(!d) return ""; const t=new Date(d); if(isNaN(t)) return "";
+  const n=new Date(); let y=n.getFullYear()-t.getFullYear();
+  const m=n.getMonth()-t.getMonth();
+  if(m<0||(m===0&&n.getDate()<t.getDate())) y--;
+  return (y>=0&&y<130)?y+" yosh":"";
+}
 function sana(d){ if(!d) return "—"; const p=d.split("-"); return `${p[2]}.${p[1]}.${p[0]}`; }
 function oyNomi(k){ const p=k.split("-");
   return ["","Yanvar","Fevral","Mart","Aprel","May","Iyun","Iyul","Avgust","Sentabr","Oktabr","Noyabr","Dekabr"][+p[1]]+" "+p[0]; }
@@ -507,7 +514,8 @@ function kadrQator(y){
         ${y.bolim?`<span class="bolim" style="background:${br.bg};color:${br.c}">${esc(y.bolim)}</span>`:""}
       </div>
       ${y.lavozim?`<div style="font-size:13px;color:var(--soft)">${esc(y.lavozim)}</div>`:""}
-      <div class="mono" style="font-size:12px;color:var(--soft);margin-top:4px">${tolov} oylik to'lov yozuvi</div>
+      <div class="mono" style="font-size:12px;color:var(--soft);margin-top:4px">
+        ${y.tugilgan?sana(y.tugilgan)+" · "+yosh(y.tugilgan)+" &nbsp;·&nbsp; ":""}${tolov} oylik to'lov yozuvi</div>
     </div>
     <div class="acts">${amallar(y)}</div></div>`;
 }
@@ -517,7 +525,7 @@ function oylikChiz(){
   const q=$("qidiruv").value.trim().toLowerCase();
   let kadrlar=data.filter(function(y){ return y.modul==="kadr"; });
   if(bolimFiltr) kadrlar=kadrlar.filter(function(k){ return k.bolim===bolimFiltr; });
-  if(q) kadrlar=kadrlar.filter(function(k){ return [k.fio,k.lavozim,k.bolim].join(" ").toLowerCase().indexOf(q)>=0; });
+  if(q) kadrlar=kadrlar.filter(function(k){ return [k.fio,k.lavozim,k.bolim,k.tugilgan].join(" ").toLowerCase().indexOf(q)>=0; });
   kadrlar.sort(function(a,b){ return String(a.bolim||"").localeCompare(String(b.bolim||""))||String(a.fio).localeCompare(String(b.fio)); });
 
   if(!kadrlar.length){
@@ -833,7 +841,11 @@ function formaChiz(y){
   function g(k,d){ return esc(y?(y[k]!=null?y[k]:(d||"")):(d||"")); }
   if(modul==="kadr"){
     return `
-    <div><label class="lb">F.I.O. *</label><input id="f_fio" value="${g("fio")}" placeholder="Familiya Ism Otasining ismi"></div>
+    <div class="g2">
+      <div><label class="lb">F.I.O. *</label><input id="f_fio" value="${g("fio")}" placeholder="Familiya Ism Otasining ismi"></div>
+      <div><label class="lb">Tug'ilgan sana</label><input type="date" id="f_tugilgan" value="${g("tugilgan")}">
+        <span class="mono" id="yoshLbl" style="font-size:12px;color:var(--navy)"></span></div>
+    </div>
     <div class="g2">
       <div><label class="lb">Bo'lim</label><select id="f_bolim">${[""].concat(BOLIMLAR.map(function(b){return b[0];})).map(function(b){
         return `<option ${g("bolim")===b?"selected":""}>${b||"Tanlanmagan"}</option>`; }).join("")}</select></div>
@@ -923,6 +935,10 @@ function jamiYangila(){
 function formaOch(y){
   $("formBody").innerHTML=formaChiz(y);
   if(modul==="xodim"){ tolovChiz(y); }
+  if(modul==="kadr"&&$("f_tugilgan")){
+    const yang=function(){ $("yoshLbl").textContent=yosh($("f_tugilgan").value); };
+    $("f_tugilgan").addEventListener("input",yang); yang();
+  }
   $("formModal").classList.remove("hidden");
   const f=$("f_fio")||$("f_nomi"); if(f) f.focus();
 }
@@ -946,7 +962,7 @@ async function saqla(){
   function olish(k){ return $("f_"+k)?$("f_"+k).value.trim():""; }
   if(modul==="kadr"){
     obj.fio=olish("fio"); if(!obj.fio){ $("f_fio").focus(); return; }
-    ["bolim","lavozim"].forEach(function(k){ obj[k]=olish(k); });
+    ["bolim","lavozim","tugilgan"].forEach(function(k){ obj[k]=olish(k); });
     if(obj.bolim==="Tanlanmagan") obj.bolim="";
     obj.tur="";
   } else if(modul==="xodim"){
@@ -1011,9 +1027,9 @@ async function sozlamaSaqla(){
 
 /* ═══════════ CSV ═══════════ */
 function csvYukla(){
-  const sar=["No","Modul","Sana","FIO/Nomi","Bolim","Lavozim","Kategoriya","Turi","Valyuta","Oylik","KPI","OperatsiyaKPI","KonsultatsiyaKPI","KichikNarkoz","KattaNarkoz","LabKPI","Navbat","NavbatKun","Jarima","Summa","Jami","Izoh"];
+  const sar=["No","Modul","Sana","FIO/Nomi","Tugilgan","Bolim","Lavozim","Kategoriya","Turi","Valyuta","Oylik","KPI","OperatsiyaKPI","KonsultatsiyaKPI","KichikNarkoz","KattaNarkoz","LabKPI","Navbat","NavbatKun","Jarima","Summa","Jami","Izoh"];
   const r=(modul==="stat")?data:filtrlangan();
-  const q=r.map(function(y){ return [y.no,(MODUL[y.modul||"xodim"]||{}).nom,y.sana,y.fio||y.nomi,y.bolim,y.lavozim,y.kategoriya,
+  const q=r.map(function(y){ return [y.no,(MODUL[y.modul||"xodim"]||{}).nom,y.sana,y.fio||y.nomi,y.tugilgan,y.bolim,y.lavozim,y.kategoriya,
     (TUR[y.tur]||{}).label||"",val(y.valyuta),son(y.oylik),son(y.kpi),son(y.opkpi),son(y.konskpi),
     son(y.narkozk),son(y.narkozb),son(y.lab),son(y.navbat),son(y.navbatKun),
     son(y.jarima),son(y.summa),summa(y),y.izoh]; });
