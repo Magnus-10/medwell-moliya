@@ -258,6 +258,8 @@ const buOy=()=>new Date().toISOString().slice(0,7);
 function oldingiOy(o){ const p=o.split("-"); let y=+p[0],m=+p[1]-1; if(m<1){m=12;y--;}
   return y+"-"+String(m).padStart(2,"0"); }
 let tanlanganOy = buOy();
+let hisobUsuli = "davr";   // davr | tolov
+function usulSet(u){ hisobUsuli=u; chiz(); }
 const esc=s=>String(s??"").replace(/[&<>"]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m]));
 const son=v=>{const n=parseFloat(String(v??"").replace(/[^\d.-]/g,""));return isNaN(n)?0:n;};
 const pul=n=>(Math.round(n)||0).toLocaleString("ru-RU").replace(/,/g," ");
@@ -412,7 +414,7 @@ async function oyNusxala(){
   for(const y of yangilar){
     no++;
     const n=Object.assign({},y,{id:Date.now().toString(36)+Math.random().toString(36).slice(2,6),no:no,
-      oy:tanlanganOy, sana:tanlanganOy+"-01"});
+      oy:tanlanganOy, sana:tanlanganOy+"-01", tolovSana:""});
     data.unshift(n); await yoz(n,"qosh");
   }
   chiz();
@@ -432,8 +434,11 @@ function kpiChiz(r){
       kpi[v]+=son(y.kpi)+son(y.lab)+son(y.opkpi)+son(y.konskpi)+son(y.narkozk)+son(y.narkozb);
       jar[v]+=son(y.jarima); nav[v]+=son(y.navbat); });
     const jamiKadr=data.filter(function(y){ return y.modul==="kadr"; }).length;
+    const tolanmagan=yig(function(y){ return !y.tolovSana; });
+    const nechta=r.filter(function(y){ return !y.tolovSana; }).length;
     k=[["Jami to'lov",ikki(jami),"var(--navy)"],["KPI bonuslar",ikki(kpi),"var(--green)"],
        ["Navbatchilik",ikki(nav),"var(--teal)"],["Jarimalar",ikki(jar),"var(--amber)"],
+       ["To'lanmagan"+(nechta?" ("+nechta+")":""),ikki(tolanmagan),nechta?"var(--rose)":"var(--green)"],
        ["To'lov kiritilgan",r.length+" / "+jamiKadr,"var(--soft)"]];
   } else if(modul==="kadr"){
     const bol={}; r.forEach(function(y){ bol[y.bolim||"—"]=1; });
@@ -560,6 +565,9 @@ function oylikChiz(){
       </div>
       <div class="acts" style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
         <div class="mono" style="font-size:17px;font-weight:600;color:var(--navy)">${pulV(jamiXodim(y),val(y.valyuta))}</div>
+        ${y.tolovSana
+          ? `<span class="tag" style="background:var(--green-soft);color:var(--green)">To'landi · ${sana(y.tolovSana)}</span>`
+          : `<span class="tag" style="background:var(--amber-soft);color:var(--amber)">To'lanmagan</span>`}
         <div style="display:flex;gap:4px">
           <button class="btn btn-sm" onclick="tahrirOch('${y.id}')">Tahrir</button>
           <button class="btn btn-sm" style="color:var(--rose)" onclick="delOch('${y.id}')">O'chirish</button></div>
@@ -693,7 +701,12 @@ function chizStat(){
 
   const o={};
   data.forEach(function(y){
-    const k=(y.modul==="xodim"&&y.oy)?y.oy:String(y.sana||"").slice(0,7); if(!k) return;
+    let k;
+    if(y.modul==="xodim"){
+      if(hisobUsuli==="tolov"){ if(!y.tolovSana) return; k=String(y.tolovSana).slice(0,7); }
+      else k=y.oy||String(y.sana||"").slice(0,7);
+    } else k=String(y.sana||"").slice(0,7);
+    if(!k) return;
     if(!o[k]) o[k]={kirim:0,chiqim:0,oylik:0};
     const m=y.modul||"xodim"; if(m==="kadr"||m==="planbaby") return;
     const s=somga(summa(y),val(y.valyuta));
@@ -713,6 +726,11 @@ function chizStat(){
      ${kartochka("Sof balans",umumKirim-umumChiqim,(umumKirim-umumChiqim)>=0?"var(--green)":"var(--rose)")}
      ${kartochka("Oyliklarga ketdi",jamiOylik,"var(--navy)")}
      <div class="kpi" style="min-width:170px"><b class="mono" style="color:var(--soft)">${KADR.length}</b><span>Jami xodim</span></div>
+     ${(function(){
+       let q=0,n=0;
+       X.forEach(function(y){ if(!y.tolovSana){ q+=somga(jamiXodim(y),val(y.valyuta)); n++; } });
+       return q?`<div class="kpi" style="min-width:170px"><b class="mono" style="color:var(--rose)">${pul(q)} so'm</b><span>To'lanmagan oylik (${n} ta)</span></div>`:"";
+     })()}
    </div>
    <p style="font-size:12px;color:var(--soft);margin:-6px 0 18px">Dollar summalar 1 USD = ${pul(kurs())} so'm kursida qo'shilgan (Sozlamadan o'zgartiriladi).</p>
 
@@ -760,7 +778,19 @@ function chizStat(){
    </div>
 
    <div class="card" style="padding:20px">
-     <h2 class="disp" style="font-size:17px;margin:0 0 16px">Oylar bo'yicha</h2>
+     <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:6px">
+       <h2 class="disp" style="font-size:17px;margin:0">Oylar bo'yicha</h2>
+       <div style="display:flex;border:1px solid var(--rule);border-radius:8px;overflow:hidden">
+         <button class="btn" style="border:none;border-radius:0;background:${hisobUsuli==="davr"?"var(--navy)":"#fff"};color:${hisobUsuli==="davr"?"#fff":"var(--soft)"}"
+           onclick="usulSet('davr')">Davr bo'yicha</button>
+         <button class="btn" style="border:none;border-radius:0;background:${hisobUsuli==="tolov"?"var(--navy)":"#fff"};color:${hisobUsuli==="tolov"?"#fff":"var(--soft)"}"
+           onclick="usulSet('tolov')">To'lov sanasi bo'yicha</button>
+       </div>
+     </div>
+     <p style="font-size:12.5px;color:var(--soft);margin:0 0 16px;line-height:1.5">
+       ${hisobUsuli==="davr"
+         ? "Oylik qaysi oy uchun hisoblangan bo'lsa, o'sha oyga yoziladi (iyul oyligi — iyulga)."
+         : "Oylik haqiqatda qachon to'langan bo'lsa, o'sha oyga yoziladi (iyul oyligi 1-avgustda berilsa — avgustga). To'lov sanasi kiritilmagan yozuvlar hisobga olinmaydi."}</p>
      ${oylar.length?`<div style="overflow-x:auto"><table class="tbl">
        <tr><th>Oy</th><th style="text-align:right">Kirim</th><th style="text-align:right">Oyliklar</th>
            <th style="text-align:right">Jami chiqim</th><th style="text-align:right">Balans</th></tr>
@@ -821,7 +851,12 @@ function formaChiz(y){
       <div class="mono" style="font-size:13px;color:var(--navy);font-weight:600;margin-top:6px">${oyNomi(y?y.oy:tanlanganOy)}</div>
     </div>
     <input type="hidden" id="f_bolim" value="${esc(kadr.bolim||"")}">
-    <div><label class="lb">Valyuta</label>${valBtn()}</div>
+    <div class="g2">
+      <div><label class="lb">To'lov sanasi (haqiqiy)</label>
+        <input type="date" id="f_tolovSana" value="${g("tolovSana")}">
+        <span style="font-size:11.5px;color:var(--soft)">Pul qachon berilgani. Bo'sh qolsa — «to'lanmagan» hisoblanadi.</span></div>
+      <div><label class="lb">Valyuta</label>${valBtn()}</div>
+    </div>
     <hr class="sep">
     <div style="font-size:12px;font-weight:600;color:var(--navy)">TO'LOV TARKIBI</div>
     <div id="tolovBlok"></div>
@@ -921,7 +956,7 @@ async function saqla(){
     obj.kadrId=kid; obj.fio=kadr.fio||""; obj.bolim=kadr.bolim||""; obj.lavozim=kadr.lavozim||"";
     obj.oy = tahrirId ? ((data.filter(function(x){return x.id===tahrirId;})[0]||{}).oy||tanlanganOy) : tanlanganOy;
     obj.sana = obj.oy+"-01";
-    obj.izoh=olish("izoh");
+    obj.izoh=olish("izoh"); obj.tolovSana=olish("tolovSana");
     Object.keys(MAYDON).forEach(function(k){ obj[k]=olish(k); });
     obj.tur="chiqim";
   } else if(modul==="planbaby"){
