@@ -104,6 +104,23 @@ table.tbl td{padding:8px;border-top:1px solid var(--rule)}
     <div class="row" id="bolimChips"></div>
   </div>
 
+  <div class="card" id="oyPanel" style="padding:14px 16px;margin-bottom:12px">
+    <div class="row" style="justify-content:space-between">
+      <div class="row" style="gap:10px">
+        <button class="btn" onclick="oyOzgart(-1)">‹</button>
+        <div>
+          <div style="font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--soft);font-weight:600">Oylik davri</div>
+          <div class="disp" id="oyNomiLbl" style="font-size:19px;font-weight:600"></div>
+        </div>
+        <button class="btn" onclick="oyOzgart(1)">›</button>
+        <input type="month" id="oyTanla" style="width:auto" onchange="oySet(this.value)">
+      </div>
+      <div class="row">
+        <button class="btn" onclick="oyNusxala()">O'tgan oydan nusxalash</button>
+      </div>
+    </div>
+  </div>
+
   <div class="row" id="filtrlar">
     <input id="qidiruv" placeholder="Qidirish…" style="flex:1 1 220px;max-width:340px">
     <select id="fTur" style="width:auto">
@@ -181,7 +198,8 @@ table.tbl td{padding:8px;border-top:1px solid var(--rule)}
 const LS="moliya_v1", LS_CFG="moliya_cfg_v1", LS_SES=LS_CFG+"_ses", JADVAL="moliya";
 
 const MODUL = {
-  xodim:    {nom:"Xodimlar",       qosh:"+ Xodim to'lovi"},
+  xodim:    {nom:"Oylik to'lovlar", qosh:null},
+  kadr:     {nom:"Kadrlar",         qosh:"+ Xodim qo'shish"},
   moliya:   {nom:"Kirim / Chiqim", qosh:"+ Kirim yoki chiqim"},
   lab:      {nom:"Laboratoriya",   qosh:"+ Laboratoriya yozuvi"},
   planbaby: {nom:"Plan Baby",      qosh:"+ Plan Baby yozuvi"},
@@ -231,11 +249,15 @@ const VAL={UZS:"So'm",USD:"Dollar $"};
 
 let cfg={url:"",key:"",kod:"",kurs:"12800"};
 let data=[], bulut=false;
-let tahrirId=null, ochirishId=null, modul="xodim", bolimFiltr=null, formTur="chiqim", formVal="UZS";
+let tahrirId=null, ochirishId=null, modul="xodim", bolimFiltr=null, formTur="chiqim", formVal="UZS", kadrTanlangan=null;
 
 /* ═══════════ YORDAMCHI ═══════════ */
 const $=id=>document.getElementById(id);
 const bugun=()=>new Date().toISOString().slice(0,10);
+const buOy=()=>new Date().toISOString().slice(0,7);
+function oldingiOy(o){ const p=o.split("-"); let y=+p[0],m=+p[1]-1; if(m<1){m=12;y--;}
+  return y+"-"+String(m).padStart(2,"0"); }
+let tanlanganOy = buOy();
 const esc=s=>String(s??"").replace(/[&<>"]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m]));
 const son=v=>{const n=parseFloat(String(v??"").replace(/[^\d.-]/g,""));return isNaN(n)?0:n;};
 const pul=n=>(Math.round(n)||0).toLocaleString("ru-RU").replace(/,/g," ");
@@ -348,9 +370,12 @@ function navChiz(){
   $("qoshBtn").classList.toggle("hidden",!q);
   $("bolimBlok").classList.toggle("hidden",modul!=="xodim");
   $("filtrlar").classList.toggle("hidden",modul==="stat");
-  $("fTur").classList.toggle("hidden",modul==="xodim"||modul==="planbaby");
-  $("fValyuta").classList.toggle("hidden",modul==="planbaby");
-  $("qidiruv").placeholder = modul==="xodim"?"F.I.O., lavozim yoki № bo'yicha qidirish"
+  $("fTur").classList.toggle("hidden",modul==="xodim"||modul==="kadr"||modul==="planbaby");
+  $("fValyuta").classList.toggle("hidden",modul==="planbaby"||modul==="kadr");
+  $("fOy").classList.toggle("hidden",modul==="kadr");
+  $("oyPanel").classList.toggle("hidden",modul!=="xodim");
+  $("fOy").parentElement && $("fOy").classList.toggle("hidden",modul==="xodim"||modul==="kadr");
+  $("qidiruv").placeholder = (modul==="xodim"||modul==="kadr")?"F.I.O., lavozim yoki bo'lim bo'yicha qidirish"
     : modul==="planbaby"?"Sarlavha yoki izoh bo'yicha qidirish":"Nomi, kategoriya yoki № bo'yicha qidirish";
 }
 
@@ -360,14 +385,39 @@ function filtrlangan(){
   const t=$("fTur").value, oy=$("fOy").value, v=$("fValyuta").value;
   return data.filter(function(y){
     if((y.modul||"xodim")!==modul) return false;
-    if(modul==="xodim" && bolimFiltr && y.bolim!==bolimFiltr) return false;
-    if(modul!=="xodim" && modul!=="planbaby" && t!=="hammasi" && (y.tur||"chiqim")!==t) return false;
-    if(modul!=="planbaby" && v!=="hammasi" && val(y.valyuta)!==v) return false;
-    if(oy && String(y.sana||"").indexOf(oy)!==0) return false;
+    if(modul==="xodim" && y.oy!==tanlanganOy) return false;
+    if((modul==="xodim"||modul==="kadr") && bolimFiltr && y.bolim!==bolimFiltr) return false;
+    if(modul!=="xodim" && modul!=="kadr" && modul!=="planbaby" && t!=="hammasi" && (y.tur||"chiqim")!==t) return false;
+    if(modul!=="planbaby" && modul!=="kadr" && v!=="hammasi" && val(y.valyuta)!==v) return false;
+    if(modul!=="xodim" && oy && String(y.sana||"").indexOf(oy)!==0) return false;
     if(!q) return true;
     return [y.fio,y.lavozim,y.bolim,y.nomi,y.kategoriya,y.izoh,y.no].join(" ").toLowerCase().indexOf(q)>=0;
   }).sort(function(a,b){ return (b.no||0)-(a.no||0); });
 }
+function oySet(o){ if(!o) return; tanlanganOy=o; chiz(); }
+function oyOzgart(n){
+  const p=tanlanganOy.split("-"); let y=+p[0], m=+p[1]+n;
+  if(m>12){m=1;y++;} if(m<1){m=12;y--;}
+  tanlanganOy=y+"-"+String(m).padStart(2,"0"); chiz();
+}
+async function oyNusxala(){
+  const oldin=oldingiOy(tanlanganOy);
+  const manba=data.filter(function(y){ return y.modul==="xodim" && y.oy===oldin; });
+  if(!manba.length){ alert(oyNomi(oldin)+" oyida to'lov yozuvlari yo'q."); return; }
+  const bor=data.filter(function(y){ return y.modul==="xodim" && y.oy===tanlanganOy; }).map(function(y){ return y.kadrId; });
+  const yangilar=manba.filter(function(y){ return bor.indexOf(y.kadrId)<0; });
+  if(!yangilar.length){ alert("Bu oyda barcha xodimlarning to'lovi allaqachon kiritilgan."); return; }
+  if(!confirm(oyNomi(oldin)+" oyidan "+yangilar.length+" ta to'lov "+oyNomi(tanlanganOy)+" oyiga nusxalansinmi?\n\nSummalar o'sha holicha ko'chiriladi — keyin KPI larni tahrirlaysiz.")) return;
+  let no=data.reduce(function(m,y){ return Math.max(m,Number(y.no)||0); },0);
+  for(const y of yangilar){
+    no++;
+    const n=Object.assign({},y,{id:Date.now().toString(36)+Math.random().toString(36).slice(2,6),no:no,
+      oy:tanlanganOy, sana:tanlanganOy+"-01"});
+    data.unshift(n); await yoz(n,"qosh");
+  }
+  chiz();
+}
+
 function bolimSet(b){ bolimFiltr=(bolimFiltr===b)?null:b; chiz(); window.scrollTo({top:0,behavior:"smooth"}); }
 function oyTozala(){ $("fOy").value=""; chiz(); }
 
@@ -381,9 +431,13 @@ function kpiChiz(r){
     r.forEach(function(y){ const v=val(y.valyuta);
       kpi[v]+=son(y.kpi)+son(y.lab)+son(y.opkpi)+son(y.konskpi)+son(y.narkozk)+son(y.narkozb);
       jar[v]+=son(y.jarima); nav[v]+=son(y.navbat); });
+    const jamiKadr=data.filter(function(y){ return y.modul==="kadr"; }).length;
     k=[["Jami to'lov",ikki(jami),"var(--navy)"],["KPI bonuslar",ikki(kpi),"var(--green)"],
        ["Navbatchilik",ikki(nav),"var(--teal)"],["Jarimalar",ikki(jar),"var(--amber)"],
-       ["Xodimlar",r.length,"var(--soft)"]];
+       ["To'lov kiritilgan",r.length+" / "+jamiKadr,"var(--soft)"]];
+  } else if(modul==="kadr"){
+    const bol={}; r.forEach(function(y){ bol[y.bolim||"—"]=1; });
+    k=[["Jami xodim",r.length,"var(--navy)"],["Bo'limlar",Object.keys(bol).length,"var(--soft)"]];
   } else if(modul==="planbaby"){
     k=[["Yozuvlar",r.length,"var(--violet)"]];
   } else {
@@ -405,31 +459,111 @@ function chiz(){
   }
   $("statView").classList.add("hidden"); $("list").classList.remove("hidden");
 
+  if(modul==="xodim"){ $("oyNomiLbl").textContent=oyNomi(tanlanganOy); $("oyTanla").value=tanlanganOy; }
+
   const r=filtrlangan();
   kpiChiz(r);
 
-  if(modul==="xodim"){
+  if(modul==="xodim"||modul==="kadr"){
     $("bolimChips").innerHTML=BOLIMLAR.map(function(B){
       const nom=B[0],c=B[1],bg=B[2];
-      const soni=data.filter(function(y){ return (y.modul||"xodim")==="xodim"&&y.bolim===nom; }).length;
+      const soni=data.filter(function(y){ return y.modul==="kadr"&&y.bolim===nom; }).length;
       const faol=bolimFiltr===nom;
       return `<div class="chip" onclick="bolimSet('${nom}')" style="${faol?"background:"+bg+";border-color:"+c+";color:"+c:""}">
         <span style="font-weight:${faol?600:500}">${nom}</span><b class="mono" style="color:${c}">${soni}</b></div>`;
     }).join("")+(bolimFiltr?`<button class="btn btn-sm" onclick="bolimSet(null)" style="align-self:center">Barchasi ✕</button>`:"");
   }
 
+  if(modul==="xodim"){ oylikChiz(); return; }
+
   if(!r.length){
     $("list").innerHTML=`<div class="card" style="padding:44px;text-align:center">
       <p class="disp" style="font-size:17px;margin:0 0 6px">Ma'lumot yo'q</p>
       <p style="font-size:14px;color:var(--soft);margin:0 0 16px">Bu bo'limga hali yozuv qo'shilmagan.</p>
-      <button class="btn btn-main" onclick="yangiOch()">${MODUL[modul].qosh}</button></div>`;
+      ${MODUL[modul].qosh?`<button class="btn btn-main" onclick="yangiOch()">${MODUL[modul].qosh}</button>`:""}</div>`;
     return;
   }
 
   $("list").innerHTML=`<div class="card" style="overflow:hidden">`+r.map(function(y){
     if(modul==="planbaby") return planQator(y);
-    if(modul==="xodim")    return xodimQator(y);
+    if(modul==="kadr")     return kadrQator(y);
     return moliyaQator(y);
+  }).join("")+`</div>`;
+}
+
+/* Kadrlar ro'yxati */
+function kadrQator(y){
+  const br=bolimRang(y.bolim);
+  const tolov=data.filter(function(x){ return x.modul==="xodim" && x.kadrId===y.id; }).length;
+  return `<div class="qator" style="border-left:3px solid ${br.c}">
+    <div style="flex:1;min-width:0">
+      <div class="row" style="gap:8px;margin-bottom:4px">
+        <span class="disp" style="font-size:16px;font-weight:500">${esc(y.fio)}</span>
+        ${y.bolim?`<span class="bolim" style="background:${br.bg};color:${br.c}">${esc(y.bolim)}</span>`:""}
+      </div>
+      ${y.lavozim?`<div style="font-size:13px;color:var(--soft)">${esc(y.lavozim)}</div>`:""}
+      <div class="mono" style="font-size:12px;color:var(--soft);margin-top:4px">${tolov} oylik to'lov yozuvi</div>
+    </div>
+    <div class="acts">${amallar(y)}</div></div>`;
+}
+
+/* Oylik to'lovlar — kadrlar kesimida */
+function oylikChiz(){
+  const q=$("qidiruv").value.trim().toLowerCase();
+  let kadrlar=data.filter(function(y){ return y.modul==="kadr"; });
+  if(bolimFiltr) kadrlar=kadrlar.filter(function(k){ return k.bolim===bolimFiltr; });
+  if(q) kadrlar=kadrlar.filter(function(k){ return [k.fio,k.lavozim,k.bolim].join(" ").toLowerCase().indexOf(q)>=0; });
+  kadrlar.sort(function(a,b){ return String(a.bolim||"").localeCompare(String(b.bolim||""))||String(a.fio).localeCompare(String(b.fio)); });
+
+  if(!kadrlar.length){
+    $("list").innerHTML=`<div class="card" style="padding:44px;text-align:center">
+      <p class="disp" style="font-size:17px;margin:0 0 6px">Kadrlar ro'yxati bo'sh</p>
+      <p style="font-size:14px;color:var(--soft);margin:0 0 16px">Avval «Kadrlar» bo'limidan xodimlarni bir marta kiriting — keyin har oy faqat to'lovni belgilaysiz.</p>
+      <button class="btn btn-main" onclick="modulSet('kadr')">Kadrlar bo'limiga o'tish</button></div>`;
+    return;
+  }
+
+  $("list").innerHTML=`<div class="card" style="overflow:hidden">`+kadrlar.map(function(k){
+    const y=data.filter(function(x){ return x.modul==="xodim" && x.kadrId===k.id && x.oy===tanlanganOy; })[0];
+    const br=bolimRang(k.bolim);
+    if(!y){
+      return `<div class="qator" style="border-left:3px solid var(--rule)">
+        <div style="flex:1;min-width:0">
+          <div class="row" style="gap:8px;margin-bottom:4px">
+            <span class="disp" style="font-size:16px;font-weight:500;color:var(--soft)">${esc(k.fio)}</span>
+            ${k.bolim?`<span class="bolim" style="background:${br.bg};color:${br.c}">${esc(k.bolim)}</span>`:""}
+          </div>
+          ${k.lavozim?`<div style="font-size:13px;color:var(--soft)">${esc(k.lavozim)}</div>`:""}
+        </div>
+        <div class="acts" style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
+          <div style="font-size:13px;color:var(--amber);font-weight:600">To'lov kiritilmagan</div>
+          <button class="btn btn-sm btn-main" onclick="tolovOch('${k.id}')">To'lov kiritish</button>
+        </div></div>`;
+    }
+    const QISQA={oylik:"Oylik",kpi:"KPI",opkpi:"Operatsiya KPI",konskpi:"Konsultatsiya KPI",
+      narkozk:"Kichik narkoz",narkozb:"Katta narkoz",lab:"Lab KPI",navbat:"Navbat",jarima:"Jarima"};
+    const qism=Object.keys(QISQA).filter(function(x){ return son(y[x]); }).map(function(x){
+      if(x==="jarima") return "Jarima −"+pul(son(y.jarima));
+      if(x==="navbat") return "Navbat "+pul(son(y.navbat))+(son(y.navbatKun)?" ("+son(y.navbatKun)+" kun)":"");
+      if(x==="oylik")  return "Oylik "+pul(son(y.oylik));
+      return QISQA[x]+" +"+pul(son(y[x]));
+    });
+    return `<div class="qator" style="border-left:3px solid ${br.c}">
+      <div style="flex:1;min-width:0">
+        <div class="row" style="gap:8px;margin-bottom:4px">
+          <span class="disp" style="font-size:16px;font-weight:500">${esc(k.fio)}</span>
+          ${k.bolim?`<span class="bolim" style="background:${br.bg};color:${br.c}">${esc(k.bolim)}</span>`:""}
+        </div>
+        ${k.lavozim?`<div style="font-size:13px;color:var(--soft)">${esc(k.lavozim)}</div>`:""}
+        ${qism.length?`<div class="mono" style="display:flex;flex-wrap:wrap;gap:3px 16px;font-size:12px;color:var(--soft);margin-top:4px">${qism.map(function(x){return "<span>"+esc(x)+"</span>";}).join("")}</div>`:""}
+        ${y.izoh?`<div style="font-size:13px;color:var(--soft);margin-top:5px;font-style:italic">${esc(y.izoh)}</div>`:""}
+      </div>
+      <div class="acts" style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
+        <div class="mono" style="font-size:17px;font-weight:600;color:var(--navy)">${pulV(jamiXodim(y),val(y.valyuta))}</div>
+        <div style="display:flex;gap:4px">
+          <button class="btn btn-sm" onclick="tahrirOch('${y.id}')">Tahrir</button>
+          <button class="btn btn-sm" style="color:var(--rose)" onclick="delOch('${y.id}')">O'chirish</button></div>
+      </div></div>`;
   }).join("")+`</div>`;
 }
 
@@ -502,6 +636,7 @@ function planQator(y){
 /* ═══════════ STATISTIKA ═══════════ */
 function chizStat(){
   const X=data.filter(function(y){ return (y.modul||"xodim")==="xodim"; });
+  const KADR=data.filter(function(y){ return y.modul==="kadr"; });
   const M=data.filter(function(y){ return y.modul==="moliya"; });
   const L=data.filter(function(y){ return y.modul==="lab"; });
 
@@ -528,6 +663,25 @@ function chizStat(){
     else if(k==="Xodim KPI") lab.kpi+=s;
     else lab.boshqa+=s;
   });
+
+  /* Xodimlar bo'limidan avtomatik qo'shiladi:
+     — Laboratoriya bo'limidagi xodimlarning oylik va bonuslari
+     — Boshqa bo'lim xodimlariga berilgan "Laboratoriya KPI" */
+  let labXodimOylik=0, labKpiJami=0, labKpiOz=0, labKpiBoshqa=0, labXodimSoni={};
+  X.forEach(function(y){
+    const v=val(y.valyuta), sm=function(x){ return somga(son(x),v); };
+    if(y.bolim==="Laboratoriya"){
+      labXodimSoni[y.kadrId||y.fio]=1;
+      labXodimOylik += sm(y.oylik)+sm(y.navbat)-sm(y.jarima);
+      labKpiOz += sm(y.lab);
+    } else {
+      labKpiBoshqa += sm(y.lab);
+    }
+  });
+  labKpiJami = labKpiOz + labKpiBoshqa;
+  lab.oylik += labXodimOylik;
+  lab.kpi   += labKpiJami;
+
   const labChiqim=lab.reagent+lab.oylik+lab.kpi+lab.boshqa;
   const labFoyda=lab.daromad-labChiqim;
 
@@ -539,9 +693,10 @@ function chizStat(){
 
   const o={};
   data.forEach(function(y){
-    const k=String(y.sana||"").slice(0,7); if(!k) return;
+    const k=(y.modul==="xodim"&&y.oy)?y.oy:String(y.sana||"").slice(0,7); if(!k) return;
     if(!o[k]) o[k]={kirim:0,chiqim:0,oylik:0};
-    const m=y.modul||"xodim", s=somga(summa(y),val(y.valyuta));
+    const m=y.modul||"xodim"; if(m==="kadr"||m==="planbaby") return;
+    const s=somga(summa(y),val(y.valyuta));
     if(m==="xodim"){ o[k].oylik+=s; o[k].chiqim+=s; }
     else if(m==="moliya"||m==="lab"){ if((y.tur||"chiqim")==="kirim") o[k].kirim+=s; else o[k].chiqim+=s; }
   });
@@ -557,6 +712,7 @@ function chizStat(){
      ${kartochka("Umumiy chiqim",umumChiqim,"var(--rose)")}
      ${kartochka("Sof balans",umumKirim-umumChiqim,(umumKirim-umumChiqim)>=0?"var(--green)":"var(--rose)")}
      ${kartochka("Oyliklarga ketdi",jamiOylik,"var(--navy)")}
+     <div class="kpi" style="min-width:170px"><b class="mono" style="color:var(--soft)">${KADR.length}</b><span>Jami xodim</span></div>
    </div>
    <p style="font-size:12px;color:var(--soft);margin:-6px 0 18px">Dollar summalar 1 USD = ${pul(kurs())} so'm kursida qo'shilgan (Sozlamadan o'zgartiriladi).</p>
 
@@ -581,16 +737,24 @@ function chizStat(){
 
    <div class="card" style="padding:20px;margin-bottom:16px">
      <h2 class="disp" style="font-size:17px;margin:0 0 4px">Laboratoriya hisoboti</h2>
-     <p style="font-size:13px;color:var(--soft);margin:0 0 16px">Daromad, reagent xarajati va xodimlarga to'lovlar.</p>
+     <p style="font-size:13px;color:var(--soft);margin:0 0 16px">Daromad, reagent xarajati va xodimlarga to'lovlar.
+       <b>Oylik to'lovlar</b> bo'limidagi Laboratoriya xodimlarining maoshi va barcha xodimlarga berilgan
+       «Laboratoriya KPI» avtomatik qo'shiladi.</p>
      <div class="row">
        ${kartochka("Daromad",lab.daromad,"var(--green)")}
        ${kartochka("Reagent / material",lab.reagent,"var(--rose)")}
        ${kartochka("Xodim oyligi",lab.oylik,"var(--navy)")}
-       ${kartochka("Xodim KPI",lab.kpi,"var(--teal)")}
+       ${kartochka("Laboratoriya KPI",lab.kpi,"var(--teal)")}
        ${kartochka("Boshqa xarajat",lab.boshqa,"var(--amber)")}
        ${kartochka("Sof foyda",labFoyda,labFoyda>=0?"var(--green)":"var(--rose)")}
      </div>
-     ${lab.daromad?`<p style="font-size:13px;color:var(--soft);margin:14px 0 0">
+     <div style="font-size:12.5px;color:var(--soft);margin-top:14px;line-height:1.7">
+       ${labXodimOylik?`Shundan <b>${pul(labXodimOylik)} so'm</b> — Laboratoriya bo'limidagi ${Object.keys(labXodimSoni).length} xodimning maoshi (oylik + navbatchilik − jarima).<br>`:""}
+       ${labKpiOz?`<b>${pul(labKpiOz)} so'm</b> — laboratoriya xodimlariga berilgan «Laboratoriya KPI».<br>`:""}
+       ${labKpiBoshqa?`<b>${pul(labKpiBoshqa)} so'm</b> — boshqa bo'lim xodimlariga berilgan «Laboratoriya KPI».<br>`:""}
+       <span style="color:var(--soft)">Xodimlarning umumiy KPI, operatsiya va konsultatsiya bonuslari bu hisobga kirmaydi.</span>
+     </div>
+     ${lab.daromad?`<p style="font-size:13px;color:var(--soft);margin:10px 0 0">
        Rentabellik: <b style="color:${labFoyda>=0?"var(--green)":"var(--rose)"}">${Math.round(labFoyda/lab.daromad*100)}%</b>
        · Har 100 000 so'm daromaddan ${pul(labChiqim/lab.daromad*100000)} so'm xarajatga ketmoqda.</p>`:""}
    </div>
@@ -637,17 +801,26 @@ function formValSet(k){ formVal=k;
 
 function formaChiz(y){
   function g(k,d){ return esc(y?(y[k]!=null?y[k]:(d||"")):(d||"")); }
-  if(modul==="xodim"){
+  if(modul==="kadr"){
     return `
-    <div class="g2">
-      <div><label class="lb">F.I.O. *</label><input id="f_fio" value="${g("fio")}" placeholder="Familiya Ism Otasining ismi"></div>
-      <div><label class="lb">Sana</label><input type="date" id="f_sana" value="${g("sana",bugun())}"></div>
-    </div>
+    <div><label class="lb">F.I.O. *</label><input id="f_fio" value="${g("fio")}" placeholder="Familiya Ism Otasining ismi"></div>
     <div class="g2">
       <div><label class="lb">Bo'lim</label><select id="f_bolim">${[""].concat(BOLIMLAR.map(function(b){return b[0];})).map(function(b){
         return `<option ${g("bolim")===b?"selected":""}>${b||"Tanlanmagan"}</option>`; }).join("")}</select></div>
       <div><label class="lb">Lavozim</label><input id="f_lavozim" value="${g("lavozim")}" placeholder="Shifokor, hamshira, operator…"></div>
     </div>
+    <p style="font-size:13px;color:var(--soft);margin:0;line-height:1.5">
+      Xodim bir marta kiritiladi. To'lovlari «Oylik to'lovlar» bo'limida har oy alohida belgilanadi.</p>`;
+  }
+  if(modul==="xodim"){
+    const kadr=data.filter(function(x){ return x.id===(y?y.kadrId:kadrTanlangan); })[0]||{};
+    return `
+    <div class="card" style="padding:12px 14px;background:var(--paper)">
+      <div class="disp" style="font-size:17px;font-weight:600">${esc(kadr.fio||"—")}</div>
+      <div style="font-size:13px;color:var(--soft);margin-top:2px">${esc(kadr.bolim||"")}${kadr.lavozim?" · "+esc(kadr.lavozim):""}</div>
+      <div class="mono" style="font-size:13px;color:var(--navy);font-weight:600;margin-top:6px">${oyNomi(y?y.oy:tanlanganOy)}</div>
+    </div>
+    <input type="hidden" id="f_bolim" value="${esc(kadr.bolim||"")}">
     <div><label class="lb">Valyuta</label>${valBtn()}</div>
     <hr class="sep">
     <div style="font-size:12px;font-weight:600;color:var(--navy)">TO'LOV TARKIBI</div>
@@ -714,28 +887,42 @@ function jamiYangila(){
 
 function formaOch(y){
   $("formBody").innerHTML=formaChiz(y);
-  if(modul==="xodim"){
-    tolovChiz(y);
-    $("f_bolim").addEventListener("change",function(){ tolovChiz(null); });
-  }
+  if(modul==="xodim"){ tolovChiz(y); }
   $("formModal").classList.remove("hidden");
   const f=$("f_fio")||$("f_nomi"); if(f) f.focus();
 }
-function yangiOch(){ tahrirId=null; formTur="chiqim"; formVal="UZS";
+function tolovOch(kadrId){
+  tahrirId=null; kadrTanlangan=kadrId; formTur="chiqim"; formVal="UZS";
+  $("formTitle").textContent="Oylik to'lov";
+  formaOch(null);
+}
+function yangiOch(){
+  if(!MODUL[modul].qosh) return;
+  tahrirId=null; kadrTanlangan=null; formTur="chiqim"; formVal="UZS";
   $("formTitle").textContent=MODUL[modul].qosh.replace("+ ",""); formaOch(null); }
 function tahrirOch(id){ const y=data.filter(function(x){return x.id===id;})[0]; if(!y) return;
-  tahrirId=id; formTur=y.tur||"chiqim"; formVal=val(y.valyuta);
+  tahrirId=id; kadrTanlangan=y.kadrId||null; formTur=y.tur||"chiqim"; formVal=val(y.valyuta);
+  modul=y.modul||modul;
   $("formTitle").textContent="Yozuvni tahrirlash"; formaOch(y); }
 function formYop(){ $("formModal").classList.add("hidden"); }
 
 async function saqla(){
   const obj={modul:modul, valyuta:formVal};
   function olish(k){ return $("f_"+k)?$("f_"+k).value.trim():""; }
-  if(modul==="xodim"){
+  if(modul==="kadr"){
     obj.fio=olish("fio"); if(!obj.fio){ $("f_fio").focus(); return; }
-    ["sana","bolim","lavozim","izoh"].forEach(function(k){ obj[k]=olish(k); });
-    Object.keys(MAYDON).forEach(function(k){ obj[k]=olish(k); });
+    ["bolim","lavozim"].forEach(function(k){ obj[k]=olish(k); });
     if(obj.bolim==="Tanlanmagan") obj.bolim="";
+    obj.tur="";
+  } else if(modul==="xodim"){
+    const kid = tahrirId ? (data.filter(function(x){return x.id===tahrirId;})[0]||{}).kadrId : kadrTanlangan;
+    if(!kid){ alert("Xodim tanlanmagan."); return; }
+    const kadr=data.filter(function(x){ return x.id===kid; })[0]||{};
+    obj.kadrId=kid; obj.fio=kadr.fio||""; obj.bolim=kadr.bolim||""; obj.lavozim=kadr.lavozim||"";
+    obj.oy = tahrirId ? ((data.filter(function(x){return x.id===tahrirId;})[0]||{}).oy||tanlanganOy) : tanlanganOy;
+    obj.sana = obj.oy+"-01";
+    obj.izoh=olish("izoh");
+    Object.keys(MAYDON).forEach(function(k){ obj[k]=olish(k); });
     obj.tur="chiqim";
   } else if(modul==="planbaby"){
     obj.nomi=olish("nomi"); if(!obj.nomi){ $("f_nomi").focus(); return; }
