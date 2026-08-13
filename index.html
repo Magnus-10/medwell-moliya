@@ -201,7 +201,9 @@ const MODUL = {
   xodim:    {nom:"Oylik to'lovlar", qosh:null},
   kadr:     {nom:"Kadrlar",         qosh:"+ Xodim qo'shish"},
   moliya:   {nom:"Kirim / Chiqim", qosh:"+ Kirim yoki chiqim"},
+  narkoz:   {nom:"Narkoz jurnali", qosh:"+ Narkoz yozuvi"},
   lab:      {nom:"Laboratoriya",   qosh:"+ Laboratoriya yozuvi"},
+  qarz:     {nom:"Qarzlar",        qosh:"+ Qarz yozuvi"},
   planbaby: {nom:"Plan Baby",      qosh:"+ Plan Baby yozuvi"},
   stat:     {nom:"Statistika",     qosh:null}
 };
@@ -244,12 +246,26 @@ function tolovMaydonlari(bolim){ return TOLOV[bolim] || STANDART; }
 const KAT_MOLIYA = ["Bemor to'lovi","Operatsiya","Konsultatsiya","UTT / Diagnostika","Ijara","Kommunal to'lov","Dori-darmon","Jihoz / ta'mir","Reklama","Soliq","Boshqa"];
 const KAT_LAB    = ["Laboratoriya daromadi","Reagent xaridi","Sarf materiallar","Jihoz / ta'mir","Xodim oyligi","Xodim KPI","Boshqa"];
 
+const NARKOZ={kichik:{label:"Kichik operatsiya",c:"var(--teal)",bg:"var(--teal-soft)"},
+             katta:{label:"Katta operatsiya",c:"var(--navy)",bg:"var(--navy-soft)"}};
+const QARZ={olindi:{label:"Qarz olindi",c:"var(--rose)",bg:"var(--rose-soft)"},
+            berildi:{label:"Qarz berildi",c:"var(--green)",bg:"var(--green-soft)"}};
 const TUR={chiqim:{label:"Chiqim",c:"var(--rose)",bg:"var(--rose-soft)"},kirim:{label:"Kirim",c:"var(--green)",bg:"var(--green-soft)"}};
 const VAL={UZS:"So'm",USD:"Dollar $"};
 
 let cfg={url:"",key:"",kod:"",kurs:"12800"};
 let data=[], bulut=false;
 let tahrirId=null, ochirishId=null, modul="xodim", bolimFiltr=null, formTur="chiqim", formVal="UZS", kadrTanlangan=null;
+let formNarkoz="kichik", formQarz="olindi";
+function formNarkozSet(k){ formNarkoz=k;
+  Array.prototype.forEach.call(document.querySelectorAll("#narkozBtns button"),function(b){
+    const on=b.getAttribute("data-nk")===k, v=NARKOZ[b.getAttribute("data-nk")];
+    b.style.border="1px solid "+(on?v.c:"var(--rule)"); b.style.background=on?v.bg:"#fff"; b.style.color=on?v.c:"var(--soft)"; }); }
+function formQarzSet(k){ formQarz=k;
+  Array.prototype.forEach.call(document.querySelectorAll("#qarzBtns button"),function(b){
+    const on=b.getAttribute("data-qz")===k, v=QARZ[b.getAttribute("data-qz")];
+    b.style.border="1px solid "+(on?v.c:"var(--rule)"); b.style.background=on?v.bg:"#fff"; b.style.color=on?v.c:"var(--soft)"; }); }
+let narkozLog=[];
 
 /* ═══════════ YORDAMCHI ═══════════ */
 const $=id=>document.getElementById(id);
@@ -287,7 +303,17 @@ function jamiXodim(y){
   });
   return s;
 }
-function summa(y){ return (y.modul==="xodim"||!y.modul) ? jamiXodim(y) : son(y.summa); }
+function summa(y){
+  if(y.modul==="xodim"||!y.modul) return jamiXodim(y);
+  if(y.modul==="narkoz") return son(y.soni)*son(y.narx);
+  return son(y.summa);
+}
+/* Anesteziologning tanlangan oydagi narkoz summasi */
+function narkozOylik(kadrId,oy,turi){
+  return data.filter(function(y){
+    return y.modul==="narkoz" && y.kadrId===kadrId && String(y.sana||"").indexOf(oy)===0 && y.turi===turi;
+  }).reduce(function(s,y){ return s+son(y.soni)*son(y.narx); },0);
+}
 function bolimRang(b){ const x=BOLIMLAR.find(z=>z[0]===b); return x?{c:x[1],bg:x[2]}:{c:"var(--soft)",bg:"var(--paper)"}; }
 
 function banner(matn,tur){
@@ -379,8 +405,8 @@ function navChiz(){
   $("qoshBtn").classList.toggle("hidden",!q);
   $("bolimBlok").classList.toggle("hidden",modul!=="xodim");
   $("filtrlar").classList.toggle("hidden",modul==="stat");
-  $("fTur").classList.toggle("hidden",modul==="xodim"||modul==="kadr"||modul==="planbaby");
-  $("fValyuta").classList.toggle("hidden",modul==="planbaby"||modul==="kadr");
+  $("fTur").classList.toggle("hidden",modul==="xodim"||modul==="kadr"||modul==="planbaby"||modul==="narkoz"||modul==="qarz");
+  $("fValyuta").classList.toggle("hidden",modul==="planbaby"||modul==="kadr"||modul==="narkoz");
   $("fOy").classList.toggle("hidden",modul==="kadr");
   $("oyPanel").classList.toggle("hidden",modul!=="xodim");
   $("fOy").parentElement && $("fOy").classList.toggle("hidden",modul==="xodim"||modul==="kadr");
@@ -396,8 +422,8 @@ function filtrlangan(){
     if((y.modul||"xodim")!==modul) return false;
     if(modul==="xodim" && y.oy!==tanlanganOy) return false;
     if((modul==="xodim"||modul==="kadr") && bolimFiltr && y.bolim!==bolimFiltr) return false;
-    if(modul!=="xodim" && modul!=="kadr" && modul!=="planbaby" && t!=="hammasi" && (y.tur||"chiqim")!==t) return false;
-    if(modul!=="planbaby" && modul!=="kadr" && v!=="hammasi" && val(y.valyuta)!==v) return false;
+    if(["moliya","lab"].indexOf(modul)>=0 && t!=="hammasi" && (y.tur||"chiqim")!==t) return false;
+    if(["moliya","lab","qarz"].indexOf(modul)>=0 && v!=="hammasi" && val(y.valyuta)!==v) return false;
     if(modul!=="xodim" && oy && String(y.sana||"").indexOf(oy)!==0) return false;
     if(!q) return true;
     return [y.fio,y.lavozim,y.bolim,y.nomi,y.kategoriya,y.izoh,y.no].join(" ").toLowerCase().indexOf(q)>=0;
@@ -450,14 +476,54 @@ function kpiChiz(r){
   } else if(modul==="kadr"){
     const bol={}; r.forEach(function(y){ bol[y.bolim||"—"]=1; });
     k=[["Jami xodim",r.length,"var(--navy)"],["Bo'limlar",Object.keys(bol).length,"var(--soft)"]];
+  } else if(modul==="narkoz"){
+    let kichikS=0,kattaS=0,kichikP=0,kattaP=0;
+    r.forEach(function(y){
+      const p=son(y.soni)*son(y.narx);
+      if((y.turi||"kichik")==="kichik"){ kichikS+=son(y.soni); kichikP+=p; }
+      else { kattaS+=son(y.soni); kattaP+=p; }
+    });
+    k=[["Kichik operatsiya",kichikS+" ta","var(--teal)"],
+       ["Katta operatsiya",kattaS+" ta","var(--rose)"],
+       ["Kichik narkoz puli",pul(kichikP)+" so'm","var(--teal)"],
+       ["Katta narkoz puli",pul(kattaP)+" so'm","var(--rose)"],
+       ["Jami narkoz puli",pul(kichikP+kattaP)+" so'm","var(--navy)"],
+       ["Yozuvlar",r.length,"var(--soft)"]];
+  } else if(modul==="qarz"){
+    const ol={UZS:0,USD:0}, ber={UZS:0,USD:0};
+    let kech=0;
+    r.forEach(function(y){
+      const v=val(y.valyuta), sm=son(y.summa)-son(y.qaytarildi);
+      if(y.turi==="berildi") ber[v]+=sm; else ol[v]+=sm;
+      if(y.yopildi!=="ha" && y.muddat && y.muddat<bugun()) kech++;
+    });
+    k=[["Qarz olindi (qoldiq)",ikki(ol),"var(--rose)"],
+       ["Qarz berildi (qoldiq)",ikki(ber),"var(--green)"],
+       ["Sof qarz (berildi − olindi)",
+         ((ber.UZS-ol.UZS)>=0?"+":"−")+pul(Math.abs(ber.UZS-ol.UZS))+" so'm"+
+         ((ber.USD-ol.USD)?"<u>"+((ber.USD-ol.USD)>=0?"+":"−")+"$"+pul(Math.abs(ber.USD-ol.USD))+"</u>":""),
+         (ber.UZS-ol.UZS)>=0?"var(--green)":"var(--rose)"],
+       ["Muddati o'tgan",kech+" ta",kech?"var(--rose)":"var(--green)"],
+       ["Yozuvlar",r.length,"var(--soft)"]];
   } else if(modul==="planbaby"){
     k=[["Yozuvlar",r.length,"var(--violet)"]];
   } else {
     const ki=yig(function(y){return (y.tur||"chiqim")==="kirim";}), ch=yig(function(y){return (y.tur||"chiqim")==="chiqim";});
-    const bU=ki.UZS-ch.UZS, bD=ki.USD-ch.USD;
-    k=[["Kirim",ikki(ki),"var(--green)"],["Chiqim",ikki(ch),"var(--rose)"],
-       ["Balans",(bU>=0?"+":"−")+pul(Math.abs(bU))+" so'm"+(bD?"<u>"+(bD>=0?"+":"−")+"$"+pul(Math.abs(bD))+"</u>":""),bU>=0?"var(--green)":"var(--rose)"],
-       ["Yozuvlar",r.length,"var(--soft)"]];
+    // Oyliklar avtomatik qo'shiladi (tanlangan oy filtriga mos)
+    const oyF=$("fOy").value;
+    let oylikSom=0, oylikSoni=0;
+    if(modul==="moliya"){
+      data.forEach(function(y){
+        if(y.modul!=="xodim") return;
+        if(oyF && y.oy!==oyF) return;
+        oylikSom+=somga(jamiXodim(y),val(y.valyuta)); oylikSoni++;
+      });
+    }
+    const bU=ki.UZS-ch.UZS-oylikSom, bD=ki.USD-ch.USD;
+    k=[["Kirim",ikki(ki),"var(--green)"],["Chiqim",ikki(ch),"var(--rose)"]];
+    if(modul==="moliya") k.push(["Oyliklar (avtomatik)",pul(oylikSom)+" so'm"+(oylikSoni?"<u>"+oylikSoni+" ta to'lov</u>":""),"var(--navy)"]);
+    k.push(["Sof balans",(bU>=0?"+":"−")+pul(Math.abs(bU))+" so'm"+(bD?"<u>"+(bD>=0?"+":"−")+"$"+pul(Math.abs(bD))+"</u>":""),bU>=0?"var(--green)":"var(--rose)"]);
+    k.push(["Yozuvlar",r.length,"var(--soft)"]);
   }
   $("kpis").innerHTML=k.map(function(x){ return `<div class="kpi"><b class="mono" style="color:${x[2]}">${x[1]}</b><span>${x[0]}</span></div>`; }).join("");
 }
@@ -499,8 +565,52 @@ function chiz(){
   $("list").innerHTML=`<div class="card" style="overflow:hidden">`+r.map(function(y){
     if(modul==="planbaby") return planQator(y);
     if(modul==="kadr")     return kadrQator(y);
+    if(modul==="narkoz")   return narkozQator(y);
+    if(modul==="qarz")     return qarzQator(y);
     return moliyaQator(y);
   }).join("")+`</div>`;
+}
+
+function narkozQator(y){
+  const n=NARKOZ[y.turi||"kichik"];
+  return `<div class="qator" style="border-left:3px solid ${n.c}">
+    <div class="mono" style="font-size:15px;font-weight:600;color:var(--soft);min-width:34px;padding-top:2px">${String(y.no).padStart(3,"0")}</div>
+    <div style="flex:1;min-width:0">
+      <div class="row" style="gap:8px;margin-bottom:5px">
+        <span class="disp" style="font-size:16px;font-weight:500">${esc(y.fio)}</span>
+        <span class="tag" style="background:${n.bg};color:${n.c}">${n.label}</span>
+        <span class="mono" style="font-size:11.5px;color:var(--soft)">${sana(y.sana)}</span>
+      </div>
+      <div class="mono" style="font-size:12px;color:var(--soft)">${son(y.soni)} ta × ${pul(son(y.narx))} so'm</div>
+      ${y.izoh?`<div style="font-size:13px;color:var(--soft);margin-top:4px;font-style:italic">${esc(y.izoh)}</div>`:""}
+    </div>
+    <div class="acts" style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
+      <div class="mono" style="font-size:17px;font-weight:600;color:${n.c}">${pul(son(y.soni)*son(y.narx))} so'm</div>
+      ${amallar(y)}
+    </div></div>`;
+}
+
+function qarzQator(y){
+  const q=QARZ[y.turi||"olindi"], v=val(y.valyuta);
+  const yopiq=!!y.qaytarildi;
+  const kech=!yopiq && y.muddat && y.muddat<bugun();
+  return `<div class="qator" style="border-left:3px solid ${yopiq?"var(--rule)":q.c}">
+    <div class="mono" style="font-size:15px;font-weight:600;color:var(--soft);min-width:34px;padding-top:2px">${String(y.no).padStart(3,"0")}</div>
+    <div style="flex:1;min-width:0">
+      <div class="row" style="gap:8px;margin-bottom:5px">
+        <span class="disp" style="font-size:16px;font-weight:500;${yopiq?"color:var(--soft)":""}">${esc(y.nomi)}</span>
+        <span class="tag" style="background:${q.bg};color:${q.c}">${q.label}</span>
+        ${yopiq?`<span class="tag" style="background:var(--green-soft);color:var(--green)">Yopildi · ${sana(y.qaytarildi)}</span>`:""}
+        ${kech?`<span class="tag" style="background:var(--rose-soft);color:var(--rose)">Muddati o'tgan</span>`:""}
+      </div>
+      <div class="mono" style="font-size:12px;color:var(--soft)">
+        ${sana(y.sana)}${y.muddat?" → "+sana(y.muddat)+" gacha":""}</div>
+      ${y.izoh?`<div style="font-size:13px;color:var(--soft);margin-top:4px;font-style:italic">${esc(y.izoh)}</div>`:""}
+    </div>
+    <div class="acts" style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
+      <div class="mono" style="font-size:17px;font-weight:600;color:${yopiq?"var(--soft)":q.c}">${pulV(son(y.summa),v)}</div>
+      ${amallar(y)}
+    </div></div>`;
 }
 
 /* Kadrlar ro'yxati */
@@ -705,7 +815,11 @@ function chizStat(){
   M.forEach(function(y){ const s=somga(son(y.summa),val(y.valyuta));
     if((y.tur||"chiqim")==="kirim") uKirim+=s; else uChiqim+=s; });
   const umumKirim=uKirim+lab.daromad;
-  const umumChiqim=uChiqim+labChiqim+jamiOylik;
+  /* Ikki marta hisoblanmasligi uchun: laboratoriya hisobotiga «Oylik to'lovlar»dan
+     avtomatik ko'chirilgan qismlar (labXodimOylik, labKpiJami) jamiOylik ichida allaqachon bor.
+     Shuning uchun umumiy chiqimga faqat laboratoriyaning o'z xarajatlari qo'shiladi. */
+  const labOzXarajati = labChiqim - labXodimOylik - labKpiJami;
+  const umumChiqim = uChiqim + labOzXarajati + jamiOylik;
 
   const o={};
   data.forEach(function(y){
@@ -740,7 +854,10 @@ function chizStat(){
        return q?`<div class="kpi" style="min-width:170px"><b class="mono" style="color:var(--rose)">${pul(q)} so'm</b><span>To'lanmagan oylik (${n} ta)</span></div>`:"";
      })()}
    </div>
-   <p style="font-size:12px;color:var(--soft);margin:-6px 0 18px">Dollar summalar 1 USD = ${pul(kurs())} so'm kursida qo'shilgan (Sozlamadan o'zgartiriladi).</p>
+   <p style="font-size:12px;color:var(--soft);margin:-6px 0 18px">
+     Umumiy chiqim = Kirim/Chiqim xarajatlari (${pul(uChiqim)}) + laboratoriyaning o'z xarajatlari (${pul(labOzXarajati)}) + barcha oyliklar (${pul(jamiOylik)}).
+     Laboratoriya xodimlarining maoshi ikki marta hisoblanmaydi.<br>
+     Dollar summalar 1 USD = ${pul(kurs())} so'm kursida qo'shilgan (Sozlamadan o'zgartiriladi).</p>
 
    <div class="card" style="padding:20px;margin-bottom:16px">
      <h2 class="disp" style="font-size:17px;margin:0 0 4px">Bo'limlar kesimi — oyliklar</h2>
@@ -880,6 +997,53 @@ function formaChiz(y){
     </div>
     <div><label class="lb">Izoh</label><textarea id="f_izoh" rows="2" placeholder="Qo'shimcha ma'lumot">${g("izoh")}</textarea></div>`;
   }
+  if(modul==="narkoz"){
+    const anesth=data.filter(function(x){ return x.modul==="kadr" && x.bolim==="Anesteziolog"; });
+    return `
+    <div class="g2">
+      <div><label class="lb">Anesteziolog *</label><select id="f_kadrId">
+        ${[{id:"",fio:"Tanlanmagan"}].concat(anesth).map(function(k){
+          return `<option value="${k.id}" ${g("kadrId")===k.id?"selected":""}>${esc(k.fio)}</option>`; }).join("")}
+      </select>${anesth.length?"":`<span style="font-size:12px;color:var(--rose)">Avval «Kadrlar» ga Anesteziolog qo'shing.</span>`}</div>
+      <div><label class="lb">Sana *</label><input type="date" id="f_sana" value="${g("sana",bugun())}"></div>
+    </div>
+    <div><label class="lb">Narkoz turi</label>
+      <div class="row" id="narkozBtns" style="flex-wrap:nowrap">${Object.keys(NARKOZ).map(function(k){
+        const v=NARKOZ[k], on=formNarkoz===k;
+        return `<button type="button" onclick="formNarkozSet('${k}')" data-nk="${k}" style="flex:1;padding:9px 0;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;
+          border:1px solid ${on?v.c:"var(--rule)"};background:${on?v.bg:"#fff"};color:${on?v.c:"var(--soft)"}">${v.label}</button>`; }).join("")}</div></div>
+    <div class="g3">
+      <div><label class="lb">Soni</label><input id="f_soni" inputmode="numeric" value="${g("soni","1")}" placeholder="1"></div>
+      <div><label class="lb">Bittasining narxi</label><input id="f_narx" inputmode="numeric" value="${g("narx")}" placeholder="0"></div>
+      <div><label class="lb">Bemor / izoh</label><input id="f_izoh" value="${g("izoh")}" placeholder="ixtiyoriy"></div>
+    </div>
+    <div class="card" style="padding:12px 14px;background:var(--teal-soft);border-color:#BEE0E2">
+      <div style="display:flex;justify-content:space-between;align-items:baseline">
+        <span style="font-size:13px;font-weight:600">Shu yozuv summasi</span>
+        <span class="mono" id="narkozJami" style="font-size:19px;font-weight:600;color:var(--teal)">0</span></div>
+      <div style="font-size:11.5px;color:var(--soft);margin-top:3px">soni × narx · oy oxirida oylik to'lovga avtomatik qo'shiladi</div>
+    </div>`;
+  }
+  if(modul==="qarz"){
+    return `
+    <div><label class="lb">Turi</label>
+      <div class="row" id="qarzBtns" style="flex-wrap:nowrap">${Object.keys(QARZ).map(function(k){
+        const v=QARZ[k], on=formQarz===k;
+        return `<button type="button" onclick="formQarzSet('${k}')" data-qz="${k}" style="flex:1;padding:9px 0;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;
+          border:1px solid ${on?v.c:"var(--rule)"};background:${on?v.bg:"#fff"};color:${on?v.c:"var(--soft)"}">${v.label}</button>`; }).join("")}</div></div>
+    <div class="g2">
+      <div><label class="lb">Kimdan / kimga *</label><input id="f_nomi" value="${g("nomi")}" placeholder="Ism yoki tashkilot nomi"></div>
+      <div><label class="lb">Summa *</label><input id="f_summa" inputmode="numeric" value="${g("summa")}" placeholder="0"></div>
+    </div>
+    <div><label class="lb">Valyuta</label>${valBtn()}</div>
+    <div class="g3">
+      <div><label class="lb">Olingan / berilgan sana</label><input type="date" id="f_sana" value="${g("sana",bugun())}"></div>
+      <div><label class="lb">Qachongacha (muddat)</label><input type="date" id="f_muddat" value="${g("muddat")}"></div>
+      <div><label class="lb">Qaytarilgan sana</label><input type="date" id="f_qaytarildi" value="${g("qaytarildi")}">
+        <span style="font-size:11.5px;color:var(--soft)">Bo'sh — hali yopilmagan</span></div>
+    </div>
+    <div><label class="lb">Izoh</label><textarea id="f_izoh" rows="3" placeholder="Shartlar, kelishuv tafsilotlari…">${g("izoh")}</textarea></div>`;
+  }
   if(modul==="planbaby"){
     return `
     <div class="g2">
@@ -917,11 +1081,92 @@ function tolovChiz(y){
     buf.push(`<div><label class="lb">${m.nom}</label><input id="f_${k}" inputmode="numeric" value="${eski}" placeholder="0"></div>`);
     if(buf.length===3||i===lst.length-1){ html+=`<div class="g3" style="margin-bottom:12px">${buf.join("")}</div>`; buf=[]; }
   });
+  if(bolim==="Anesteziolog") html+=narkozBlok();
   blok.innerHTML=html;
+  if(bolim==="Anesteziolog"){
+    narkozChiz();
+    narkozdanTolov(y);
+  }
   const nomlar=lst.filter(function(k){ return !MAYDON[k].hisobsiz; })
     .map(function(k){ return (MAYDON[k].minus?"− ":"")+MAYDON[k].nom.replace(" (−)","").replace(" (bonus)","").replace(" (dejur)",""); });
   $("jamiIzoh").textContent=nomlar.join(" + ").replace(/\+ −/g,"−");
   lst.forEach(function(k){ $("f_"+k).addEventListener("input",jamiYangila); });
+  jamiYangila();
+}
+
+/* Narkoz jurnalidan oylik to'lovga avtomatik ko'chirish */
+function narkozdanTolov(y){
+  const kid = y ? y.kadrId : kadrTanlangan;
+  const oy  = y ? (y.oy||tanlanganOy) : tanlanganOy;
+  if(!kid) return;
+  const k=narkozOylik(kid,oy,"kichik"), b=narkozOylik(kid,oy,"katta");
+  if(!k && !b) return;
+  if($("f_narkozk")){ $("f_narkozk").value=k; $("f_narkozk").readOnly=true; $("f_narkozk").style.background="var(--teal-soft)"; }
+  if($("f_narkozb")){ $("f_narkozb").value=b; $("f_narkozb").readOnly=true; $("f_narkozb").style.background="var(--teal-soft)"; }
+  const izoh=document.createElement("div");
+  izoh.style.cssText="font-size:12px;color:var(--teal);font-weight:600;margin:-4px 0 10px";
+  izoh.textContent="Narkoz summalari jurnaldan avtomatik hisoblandi ("+oyNomi(oy)+"). O'zgartirish uchun jurnal yozuvlarini tahrirlang.";
+  $("tolovBlok").insertBefore(izoh,$("tolovBlok").firstChild);
+  jamiYangila();
+}
+
+/* ── Anesteziolog: kunlik narkoz jurnali ── */
+function narkozBlok(){
+  return `<div class="card" style="padding:14px;margin-bottom:12px;background:var(--teal-soft);border-color:#BCDCDE">
+    <div style="font-size:12px;font-weight:600;color:var(--teal);margin-bottom:4px">KUNLIK NARKOZ JURNALI</div>
+    <p style="font-size:12px;color:var(--soft);margin:0 0 10px;line-height:1.5">
+      Har kuni bajarilgan narkozni qo'shib boring — yuqoridagi narkoz summalari avtomatik yig'iladi.</p>
+    <div class="g3" style="margin-bottom:8px">
+      <div><label class="lb">Sana</label><input type="date" id="n_sana" value="${bugun()}"></div>
+      <div><label class="lb">Turi</label><select id="n_tur">
+        <option value="kichik">Kichik operatsiya</option><option value="katta">Katta operatsiya</option></select></div>
+      <div><label class="lb">Soni</label><input id="n_soni" inputmode="numeric" value="1"></div>
+    </div>
+    <div class="g2" style="margin-bottom:8px">
+      <div><label class="lb">1 tasi narxi</label><input id="n_narx" inputmode="numeric" placeholder="0"></div>
+      <div style="display:flex;align-items:flex-end"><button type="button" class="btn btn-main" style="width:100%;padding:9px 0" onclick="narkozQosh()">+ Jurnalga qo'shish</button></div>
+    </div>
+    <div id="narkozRoyxat"></div>
+  </div>`;
+}
+
+function narkozQosh(){
+  const sn=$("n_sana").value, tr=$("n_tur").value, so=son($("n_soni").value)||1, nx=son($("n_narx").value);
+  if(!nx){ $("n_narx").focus(); return; }
+  narkozLog.push({sana:sn,tur:tr,soni:so,narx:nx});
+  narkozLog.sort(function(a,b){ return String(a.sana).localeCompare(String(b.sana)); });
+  $("n_soni").value="1";
+  narkozChiz();
+}
+function narkozOchir(i){ narkozLog.splice(i,1); narkozChiz(); }
+
+function narkozChiz(){
+  const q=$("narkozRoyxat"); if(!q) return;
+  let kichik=0, katta=0, kSoni=0, bSoni=0;
+  narkozLog.forEach(function(x){
+    const jam=son(x.soni)*son(x.narx);
+    if(x.tur==="katta"){ katta+=jam; bSoni+=son(x.soni); } else { kichik+=jam; kSoni+=son(x.soni); }
+  });
+  q.innerHTML = narkozLog.length ? `
+    <div style="max-height:190px;overflow-y:auto;background:#fff;border-radius:8px;border:1px solid var(--rule)">
+      <table class="tbl" style="font-size:13px">
+        <tr><th>Sana</th><th>Turi</th><th style="text-align:right">Soni</th><th style="text-align:right">Narxi</th><th style="text-align:right">Jami</th><th></th></tr>
+        ${narkozLog.map(function(x,i){ return `<tr>
+          <td class="mono">${sana(x.sana)}</td>
+          <td>${x.tur==="katta"?"Katta":"Kichik"}</td>
+          <td class="mono" style="text-align:right">${son(x.soni)}</td>
+          <td class="mono" style="text-align:right">${pul(son(x.narx))}</td>
+          <td class="mono" style="text-align:right;font-weight:600">${pul(son(x.soni)*son(x.narx))}</td>
+          <td style="text-align:right"><button type="button" class="btn btn-sm" style="color:var(--rose)" onclick="narkozOchir(${i})">✕</button></td>
+        </tr>`; }).join("")}
+      </table>
+    </div>
+    <div class="mono" style="font-size:12.5px;color:var(--teal);margin-top:8px;font-weight:600">
+      Kichik: ${kSoni} ta · ${pul(kichik)} &nbsp;|&nbsp; Katta: ${bSoni} ta · ${pul(katta)}</div>`
+    : `<p style="font-size:13px;color:var(--soft);margin:0">Jurnal bo'sh — birinchi narkozni qo'shing.</p>`;
+
+  if($("f_narkozk")){ $("f_narkozk").value=kichik||""; $("f_narkozk").readOnly=narkozLog.length>0; }
+  if($("f_narkozb")){ $("f_narkozb").value=katta||"";  $("f_narkozb").readOnly=narkozLog.length>0; }
   jamiYangila();
 }
 
@@ -934,7 +1179,15 @@ function jamiYangila(){
 
 function formaOch(y){
   $("formBody").innerHTML=formaChiz(y);
-  if(modul==="xodim"){ tolovChiz(y); }
+  if(modul==="xodim"){
+    try{ narkozLog = y&&y.narkozLog ? JSON.parse(y.narkozLog) : []; }catch(e){ narkozLog=[]; }
+    if(!Array.isArray(narkozLog)) narkozLog=[];
+    tolovChiz(y);
+  }
+  if(modul==="narkoz"&&$("f_soni")){
+    const yang=function(){ $("narkozJami").textContent=pul(son($("f_soni").value)*son($("f_narx").value))+" so'm"; };
+    $("f_soni").addEventListener("input",yang); $("f_narx").addEventListener("input",yang); yang();
+  }
   if(modul==="kadr"&&$("f_tugilgan")){
     const yang=function(){ $("yoshLbl").textContent=yosh($("f_tugilgan").value); };
     $("f_tugilgan").addEventListener("input",yang); yang();
@@ -949,10 +1202,11 @@ function tolovOch(kadrId){
 }
 function yangiOch(){
   if(!MODUL[modul].qosh) return;
-  tahrirId=null; kadrTanlangan=null; formTur="chiqim"; formVal="UZS";
+  tahrirId=null; kadrTanlangan=null; formTur="chiqim"; formVal="UZS"; formNarkoz="kichik"; formQarz="olindi";
   $("formTitle").textContent=MODUL[modul].qosh.replace("+ ",""); formaOch(null); }
 function tahrirOch(id){ const y=data.filter(function(x){return x.id===id;})[0]; if(!y) return;
   tahrirId=id; kadrTanlangan=y.kadrId||null; formTur=y.tur||"chiqim"; formVal=val(y.valyuta);
+  formNarkoz=y.turi||"kichik"; formQarz=(y.modul==="qarz"?(y.turi||"olindi"):"olindi");
   modul=y.modul||modul;
   $("formTitle").textContent="Yozuvni tahrirlash"; formaOch(y); }
 function formYop(){ $("formModal").classList.add("hidden"); }
@@ -973,8 +1227,19 @@ async function saqla(){
     obj.oy = tahrirId ? ((data.filter(function(x){return x.id===tahrirId;})[0]||{}).oy||tanlanganOy) : tanlanganOy;
     obj.sana = obj.oy+"-01";
     obj.izoh=olish("izoh"); obj.tolovSana=olish("tolovSana");
+    obj.narkozLog = (obj.bolim==="Anesteziolog"&&narkozLog.length) ? JSON.stringify(narkozLog) : "";
     Object.keys(MAYDON).forEach(function(k){ obj[k]=olish(k); });
     obj.tur="chiqim";
+  } else if(modul==="narkoz"){
+    obj.kadrId=olish("kadrId"); if(!obj.kadrId){ alert("Anesteziologni tanlang."); return; }
+    const kadr=data.filter(function(x){ return x.id===obj.kadrId; })[0]||{};
+    obj.fio=kadr.fio||""; obj.bolim="Anesteziolog"; obj.turi=formNarkoz;
+    ["sana","soni","narx","izoh"].forEach(function(k){ obj[k]=olish(k); });
+    obj.summa=String(son(obj.soni)*son(obj.narx)); obj.tur="chiqim"; obj.valyuta="UZS";
+  } else if(modul==="qarz"){
+    obj.nomi=olish("nomi"); if(!obj.nomi){ $("f_nomi").focus(); return; }
+    ["summa","sana","muddat","qaytarildi","izoh"].forEach(function(k){ obj[k]=olish(k); });
+    obj.turi=formQarz; obj.tur=(formQarz==="olindi")?"kirim":"chiqim";
   } else if(modul==="planbaby"){
     obj.nomi=olish("nomi"); if(!obj.nomi){ $("f_nomi").focus(); return; }
     obj.sana=olish("sana"); obj.izoh=olish("izoh"); obj.tur="";
